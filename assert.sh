@@ -105,15 +105,15 @@ assert() {
     (( tests_ran++ )) || :
     [[ -z "$DISCOVERONLY" ]] || return
     expected=$(echo -ne "${2:-}")
-    result="$(eval 2>/dev/null "$1" <<< ${3:-})" || true
-    if [[ "$result" == "$expected" ]]; then
+    _run_cmd "$1" "${3:-}"
+    if [[ "$last_stdout" == "$expected" ]]; then
         [[ -z "$DEBUG" ]] || echo -n .
         return
     fi
-    result="$(sed -e :a -e '$!N;s/\n/\\n/;ta' <<< "$result")"
-    [[ -z "$result" ]] && result="nothing" || result="\"$result\""
+    result="$(sed -e :a -e '$!N;s/\n/\\n/;ta' <<< "$last_stdout")"
+    [[ -z "$last_stdout" ]] && result="nothing" || result="\"$last_stdout\""
     [[ -z "$2" ]] && expected="nothing" || expected="\"$2\""
-    _assert_fail "expected $expected${_indent}got $result" "$1" "$3"
+    _assert_fail "expected $expected${_indent}got $result" "$1" "$3" "" "$last_stderr"
 }
 
 assert_raises() {
@@ -121,19 +121,21 @@ assert_raises() {
     (( tests_ran++ )) || :
     [[ -z "$DISCOVERONLY" ]] || return
     status=0
-    (eval "$1" <<< ${3:-}) > /dev/null 2>&1 || status=$?
+    _run_cmd "$1" "${3:-}" || status=$?
     expected=${2:-0}
     if [[ "$status" -eq "$expected" ]]; then
         [[ -z "$DEBUG" ]] || echo -n .
         return
     fi
-    _assert_fail "program terminated with code $status instead of $expected" "$1" "$3"
+    _assert_fail "program terminated with code $status instead of $expected" "$1" "$3" "$last_stdout" "$last_stderr"
 }
 
 _assert_fail() {
     # _assert_fail <failure> <command> <stdin>
     [[ -n "$DEBUG" ]] && echo -n X
     report="test #$tests_ran \"$2${3:+ <<< $3}\" failed:${_indent}$1"
+    [[ -n "$4" ]] && report="$report${_indent}stdout: $4"
+    [[ -n "$5" ]] && report="$report${_indent}stderr: $5"
     if [[ -n "$STOP" ]]; then
         [[ -n "$DEBUG" ]] && echo
         echo "$report"
@@ -178,11 +180,21 @@ _skip() {
     fi
 }
 
+_run_cmd() {
+    eval "$( (eval "$1") 2> >(_set_local_variable stderr) > >(_set_local_variable stdout) <<< ${2:-}; <<<"$?" _set_local_variable retval )"
+    last_stdout="$stdout"; last_stderr="$stderr"; return_value="$retval"
+    return "$retval"
+}
+
+_set_local_variable() {
+    printf -v "$1" "%s" "$(cat)"; declare -p "$1";
+}
 
 _assert_reset
 : ${tests_suite_status:=0}  # remember if any of the tests failed so far
 : ${tests_ran_total:=0}     # remember the total number of tests ran (inc. failures)
 : ${tests_failed_total:=0}  # remember the total number of test failures
+
 _assert_cleanup() {
     local status=$?
     # modify exit code if it's not already non-zero

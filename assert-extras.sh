@@ -14,13 +14,13 @@ assert_failure() {
     (( tests_ran++ )) || :
     [[ -z "$DISCOVERONLY" ]] || return
     status=0
-    (eval "$1" <<< ${2:-}) > /dev/null 2>&1 || status=$?
+    _run_cmd "$1" "${2:-}" || status=$?
     if [[ "$status" != "0" ]]; then
         [[ -z "$DEBUG" ]] || echo -n .
         return
     fi
     _assert_fail "program terminated with a zero return code; expecting non-zero return code" \
-    	"$1" "$2"
+	    "$1" "$2" "$last_stdout" "$last_stderr"
 }
 
 # assert_contains <command> <expected output...>
